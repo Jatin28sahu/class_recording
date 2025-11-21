@@ -1,6 +1,48 @@
-_pycache_
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
 .venv
-*.mp3
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
 .env
+
+# Audio files (keep for testing, but exclude from git)
+*.mp3
 *.wav
-*.json
+*.m4a
+*.ogg
+*.flac
+
+# Processed files
+*.deepgram.json
+*.converted.wav
+*.tutor.nodes.json
+*.tutor.combined.json
+test_result_*.md
+
+# Uploads directory (keep structure but not files)
+uploads/*
+!uploads/.gitkeep
+
+# Keep database in repo as requested
+# recordings.db is tracked

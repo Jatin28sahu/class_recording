@@ -22,9 +22,12 @@ You must have:
 import os
 from typing import TypedDict, Optional
 
-from openai import OpenAI
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
+
 load_dotenv()
 
 # ---------------------------------------------------------------------
@@ -32,10 +35,10 @@ load_dotenv()
 # ---------------------------------------------------------------------
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise RuntimeError("Please set OPENAI_API_KEY in your environment.")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+if not OPENAI_API_KEY and not GEMINI_API_KEY:
+    raise RuntimeError("Please set either OPENAI_API_KEY or GEMINI_API_KEY in your environment.")
 
 # Model names (adjust to whatever your account exposes)
 MODEL_NODE_1A = "gpt-4o"
@@ -46,26 +49,32 @@ MODEL_NODE_4 = "gpt-4o-mini"
 
 
 # ---------------------------------------------------------------------
-# Shared helper to call OpenAI
+# Shared helper to call LLM using LangChain (automatic token tracking)
 # ---------------------------------------------------------------------
 
 
 def call_openai(model: str, system_prompt: str, user_prompt: str) -> str:
-    """Small helper to call OpenAI chat models and return text content."""
-    base_payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    }
-
-    # Only add temperature if the model actually supports it
-    if "gpt-5" not in model.lower():
-        base_payload["temperature"] = 0.3
-
-    resp = client.chat.completions.create(**base_payload)
-    return resp.choices[0].message.content or ""
+    """
+    Call OpenAI models using LangChain's ChatOpenAI.
+    
+    LangChain automatically tracks token usage and sends it to LangSmith,
+    eliminating the need for manual token extraction. Token counts, costs,
+    and detailed breakdowns are automatically captured.
+    """
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    # Configure temperature only for non-GPT-5 models
+    if "gpt-5" in model.lower():
+        llm = ChatOpenAI(model=model, api_key=OPENAI_API_KEY)
+    else:
+        llm = ChatOpenAI(model=model, temperature=0.3, api_key=OPENAI_API_KEY)
+    
+    # LangChain automatically tracks token usage in LangSmith
+    response = llm.invoke(messages)
+    return response.content.strip()
 
 
 # ---------------------------------------------------------------------
@@ -464,6 +473,3 @@ def run_tutor_pipeline(
         "combined_markdown": combined_md,
         "combined_json": combined_json,
     }
-
-
-

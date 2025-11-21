@@ -1,4 +1,4 @@
-"""
+r"""
 Class Tutor LangGraph - Final Version (Provider & Model Parametrized)
 Supports GPT-5, Gemini, Graph DAG dependencies, structured outputs.
 
@@ -30,8 +30,18 @@ import operator
 from langgraph.graph import StateGraph, END
 from dotenv import load_dotenv
 
-from openai import OpenAI
-from google.generativeai import GenerativeModel, configure
+from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
+
+try:
+    from langsmith import uuid7
+except ImportError:
+    # Fallback if langsmith is not installed or uuid7 is not available
+    import uuid
+    def uuid7():
+        return str(uuid.uuid4())
+
 
 
 load_dotenv()
@@ -41,14 +51,10 @@ load_dotenv()
 # ---------------------------------------------------------------------
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-if not OPENAI_API_KEY and not GEMINI_API_KEY:
-    raise RuntimeError("You must set either OPENAI_API_KEY or GEMINI_API_KEY.")
-
-client_openai = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-if GEMINI_API_KEY:
-    configure(api_key=GEMINI_API_KEY)
+if not OPENAI_API_KEY and not GOOGLE_API_KEY:
+    raise RuntimeError("You must set either OPENAI_API_KEY or GOOGLE_API_KEY.")
 
 # ---------------------------------------------------------------------
 # Node Model/Provider Configs
@@ -57,31 +63,42 @@ MODEL_NODE_1A = ("gpt-4o", "openai")
 MODEL_NODE_1B = ("gpt-4o-mini", "openai")
 MODEL_NODE_2  = ("gpt-4o-mini", "openai")
 MODEL_NODE_3  = ("gpt-5", "openai")
-MODEL_NODE_4  = ("gpt-4o-mini", "openai")
+MODEL_NODE_4  = ("gemini-2.5-flash", "gemini")
 
 # ---------------------------------------------------------------------
-# LLM Helper (Supports GPT-5 and Gemini Models Without Temperature)
+# LLM Helper using LangChain integrations for automatic token tracking
 # ---------------------------------------------------------------------
 def call_llm(provider: str, model: str, system_prompt: str, user_prompt: str) -> str:
+    """
+    Call LLM using LangChain integrations.
+    
+    LangChain automatically tracks token usage and sends it to LangSmith,
+    eliminating the need for manual token extraction. Token counts, costs,
+    and detailed breakdowns (cached tokens, reasoning tokens, etc.) are
+    automatically captured and displayed in the LangSmith UI.
+    """
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
     if provider.lower() == "openai":
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        }
-        if not model.startswith("gpt-5"):  # GPT-5 ignores temperature
-            payload["temperature"] = 0.3
-
-        resp = client_openai.chat.completions.create(**payload)
-        return resp.choices[0].message.content.strip() or ""
-
+        # Configure temperature only for non-GPT-5 models
+        if model.startswith("gpt-5"):
+            llm = ChatOpenAI(model=model, api_key=OPENAI_API_KEY)
+        else:
+            llm = ChatOpenAI(model=model, temperature=0.3, api_key=OPENAI_API_KEY)
+        
+        # LangChain automatically tracks token usage in LangSmith
+        response = llm.invoke(messages)
+        return response.content.strip()
+    
     elif provider.lower() == "gemini":
-        gemini_model = GenerativeModel(model)
-        resp = gemini_model.generate_content(f"{system_prompt}\n\n{user_prompt}")
-        return resp.text.strip()
-
+        # ChatGoogleGenerativeAI automatically tracks token usage
+        llm = ChatGoogleGenerativeAI(model=model, google_api_key=GOOGLE_API_KEY,temperature=0.3)
+        response = llm.invoke(messages)
+        return response.content.strip()
+    
     else:
         raise ValueError("provider must be 'openai' or 'gemini'")
 
